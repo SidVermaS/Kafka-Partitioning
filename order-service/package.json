@@ -1,0 +1,12 @@
+{
+  "name": "order-service",
+  "type": "module",
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.10.0",
+    "express": "^5.2.1"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test:partitioner": "node src/partitioner.test.js"
+  }
+}

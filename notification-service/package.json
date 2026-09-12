@@ -1,0 +1,10 @@
+{
+  "name": "notification-service",
+  "type": "module",
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.10.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}

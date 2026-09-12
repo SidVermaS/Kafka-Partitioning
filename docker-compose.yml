@@ -1,0 +1,126 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Kafka partitioning demo
+#
+#                      order-service  (PRODUCER, key = customerId)
+#                            │
+#                            │  partition = murmur2(key) % PARTITIONS
+#              ┌─────────────┼─────────────┐
+#              ▼             ▼             ▼
+#         partition 0   partition 1   partition 2      topic "orders"
+#              │             │             │
+#              ▼             ▼             ▼
+#         consumer-1    consumer-2    consumer-3       group "notification-service"
+#
+#  One knob controls the whole thing — the partition count:
+#
+#      docker compose up --build                      # 3 partitions (default)
+#      docker compose down && PARTITIONS=6 docker compose up --build
+#
+#  `down` matters: a topic's partition count is fixed when it's created,
+#  and Kafka's data lives inside the container.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      # HOST = your Node services on the laptop · DOCKER = other containers
+      KAFKA_LISTENERS: HOST://:9092,DOCKER://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Industry practice: never let a typo'd producer silently create a topic
+      # with some default partition count. Partition count is a design decision,
+      # so topics are only ever created on purpose (see create-topic below).
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+
+  # 👇 WHERE PARTITIONING STARTS
+  #    Creates "orders" with N partitions, then prints how they're laid out.
+  #    See the layout any time with:  docker compose logs create-topic
+  create-topic:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic orders \
+          --partitions ${PARTITIONS:-3} --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --describe --topic orders
+
+  # PRODUCER — keys every order by customerId.
+  # Kafka routes each message itself; PARTITION_COUNT is only used by the demo
+  # to *predict* the partition and prove the prediction right.
+  order-service:
+    build: ./order-service
+    ports: ["3000:3000"]
+    environment:
+      KAFKA_BROKER: kafka:19092
+      PARTITION_COUNT: ${PARTITIONS:-3}
+    depends_on:
+      create-topic: { condition: service_completed_successfully }
+
+  # ── CONSUMERS ──────────────────────────────────────────────────────────────
+  # Three containers from the same image with the SAME groupId, so they form
+  # ONE consumer group. Kafka gives every partition to exactly one of them.
+  #
+  #   3 partitions, 3 consumers → one partition each
+  #   3 partitions, 2 consumers → someone reads two
+  #   3 partitions, 4 consumers → someone reads nothing
+  #
+  # Written out longhand (instead of `--scale`) so you can stop exactly one and
+  # watch the others take over:   docker compose stop notification-3
+  notification-1:
+    build: ./notification-service
+    environment: { KAFKA_BROKER: kafka:19092, CONSUMER_NAME: consumer-1 }
+    depends_on:
+      create-topic: { condition: service_completed_successfully }
+
+  notification-2:
+    build: ./notification-service
+    environment: { KAFKA_BROKER: kafka:19092, CONSUMER_NAME: consumer-2 }
+    depends_on:
+      create-topic: { condition: service_completed_successfully }
+
+  notification-3:
+    build: ./notification-service
+    environment: { KAFKA_BROKER: kafka:19092, CONSUMER_NAME: consumer-3 }
+    depends_on:
+      create-topic: { condition: service_completed_successfully }
+
+  # PROOF — checks every claim in the README against the live broker.
+  # Not started by `up`. Run it with:  docker compose run --rm verifier
+  verifier:
+    build: ./verifier
+    profiles: ["verify"]
+    environment:
+      KAFKA_BROKER: kafka:19092
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  # Browse topics → orders → Messages, and filter by partition.
+  # http://localhost:8080
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    ports: ["8080:8080"]
+    depends_on:
+      kafka: { condition: service_healthy }
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      DYNAMIC_CONFIG_ENABLED: "true"
