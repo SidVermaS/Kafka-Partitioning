@@ -15,7 +15,7 @@ import { murmur2, partitionFor, REFERENCE_VECTORS } from "./partitioner.js";
 const brokers = [process.env.KAFKA_BROKER ?? "localhost:9092"];
 const TOPIC = `verify-${Date.now()}`;
 const PARTITIONS = 3;
-const CUSTOMERS = ["alice", "priya", "chen", "maria", "omar", "yuki"];
+const CUSTOMERS = ["alice", "sam", "leo", "maria", "omar", "yuki"];
 const ORDERS_EACH = 5;
 
 let failed = 0;

@@ -76,14 +76,14 @@ async function placeOrder({ customerId, item, amount, keyed = true }) {
 /** The scripted burst the reel is built around. */
 const SCRIPT = [
   { customerId: "alice", item: "Margherita Pizza", amount: 499 },
-  { customerId: "priya", item: "Sushi Platter", amount: 899 },
-  { customerId: "chen", item: "Beef Tacos", amount: 349 },
+  { customerId: "sam", item: "Sushi Platter", amount: 899 },
+  { customerId: "leo", item: "Beef Tacos", amount: 349 },
   { customerId: "alice", item: "Garlic Bread", amount: 149 },
   { customerId: "maria", item: "Cheeseburger", amount: 399 },
-  { customerId: "priya", item: "Miso Ramen", amount: 549 },
+  { customerId: "sam", item: "Miso Ramen", amount: 549 },
   { customerId: "alice", item: "Tiramisu", amount: 249 },
-  { customerId: "chen", item: "Spring Rolls", amount: 199 },
-  { customerId: "priya", item: "Green Tea", amount: 99 },
+  { customerId: "leo", item: "Spring Rolls", amount: 199 },
+  { customerId: "sam", item: "Green Tea", amount: 99 },
 ];
 
 const app = express();

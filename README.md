@@ -32,7 +32,7 @@ The same picture, as text:
               ▼                     ▼                     ▼
      ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
      │   partition 0   │   │   partition 1   │   │   partition 2   │   topic "orders"
-     │  alice · maria  │   │      priya      │   │      chen       │
+     │  alice · maria  │   │       sam       │   │       leo       │
      └────────┬────────┘   └────────┬────────┘   └────────┬────────┘
               ▼                     ▼                     ▼
          consumer A            consumer B            consumer C       group "notification-service"
@@ -112,7 +112,7 @@ Each partition is an append-only log with its own counter. alice's orders get of
 **5. The consumer group splits the partitions.**
 The three `notification-service` containers share one `groupId`. Kafka assigns every partition to **exactly one** of them. consumer-1 reads partition 0 from offset 0 upward, in order. It never sees partition 1 or 2.
 
-**6. Put together:** alice → always partition 0 → always the same consumer → always in the order she placed them. Meanwhile priya and chen are processed in parallel, by other consumers.
+**6. Put together:** alice → always partition 0 → always the same consumer → always in the order she placed them. Meanwhile sam and leo are processed in parallel, by other consumers.
 
 ### What partitioning does *not* promise
 
@@ -212,20 +212,20 @@ The response is built from the **broker's own acknowledgements** — nothing her
 │    offset 3   alice #3       Tiramisu                                │
 │                                                                      │
 │ partition 1  ▓▓▓░░░░░░░  3 msg                                       │
-│    offset 0   priya #1       Sushi Platter                           │
-│    offset 1   priya #2       Miso Ramen                              │
-│    offset 2   priya #3       Green Tea                               │
+│    offset 0   sam #1         Sushi Platter                           │
+│    offset 1   sam #2         Miso Ramen                              │
+│    offset 2   sam #3         Green Tea                               │
 │                                                                      │
 │ partition 2  ▓▓░░░░░░░░  2 msg                                       │
-│    offset 0   chen #1        Beef Tacos                              │
-│    offset 1   chen #2        Spring Rolls                            │
+│    offset 0   leo #1         Beef Tacos                              │
+│    offset 1   leo #2         Spring Rolls                            │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │ Per-customer ordering                                                │
 │                                                                      │
 │   ✅ alice     3 orders  all on partition 0 — order kept             │
-│   ✅ priya     3 orders  all on partition 1 — order kept             │
-│   ✅ chen      2 orders  all on partition 2 — order kept             │
+│   ✅ sam       3 orders  all on partition 1 — order kept             │
+│   ✅ leo       2 orders  all on partition 2 — order kept             │
 │   ✅ maria     1 order   all on partition 0 — order kept             │
 │                                                                      │
 │   ✅ partitioner.js predicted 9/9 partitions correctly               │
@@ -244,11 +244,11 @@ p0 offset 0   consumer-3  key=alice      → alice #1 Margherita Pizza
 p0 offset 1   consumer-3  key=alice      → alice #2 Garlic Bread
 p0 offset 2   consumer-3  key=maria      → maria #1 Cheeseburger
 p0 offset 3   consumer-3  key=alice      → alice #3 Tiramisu
-p1 offset 0   consumer-2  key=priya      → priya #1 Sushi Platter
-p1 offset 1   consumer-2  key=priya      → priya #2 Miso Ramen
-p1 offset 2   consumer-2  key=priya      → priya #3 Green Tea
-p2 offset 0   consumer-1  key=chen       → chen #1 Beef Tacos
-p2 offset 1   consumer-1  key=chen       → chen #2 Spring Rolls
+p1 offset 0   consumer-2  key=sam      → sam #1 Sushi Platter
+p1 offset 1   consumer-2  key=sam      → sam #2 Miso Ramen
+p1 offset 2   consumer-2  key=sam      → sam #3 Green Tea
+p2 offset 0   consumer-1  key=leo       → leo #1 Beef Tacos
+p2 offset 1   consumer-1  key=leo       → leo #2 Spring Rolls
 ```
 
 ---
@@ -285,8 +285,8 @@ curl -XPOST "localhost:3000/api/demo?keyed=false"
 │ Per-customer ordering                                                │
 │                                                                      │
 │   ❌ alice     3 orders  split across p0, p2 — ORDER LOST            │
-│   ❌ priya     3 orders  split across p0, p1, p2 — ORDER LOST        │
-│   ❌ chen      2 orders  split across p0, p2 — ORDER LOST            │
+│   ❌ sam       3 orders  split across p0, p1, p2 — ORDER LOST        │
+│   ❌ leo       2 orders  split across p0, p2 — ORDER LOST            │
 │   ⚠️ maria     1 order   on p2 by luck — no key, no guarantee        │
 └──────────────────────────────────────────────────────────────────────┘
 
@@ -381,8 +381,8 @@ Same key, same hash — but `% 6` instead of `% 3`, so alice goes to **partition
 
 ```
 │   ✅ alice     3 orders  all on partition 3 — order kept             │
-│   ✅ priya     3 orders  all on partition 4 — order kept             │
-│   ✅ chen      2 orders  all on partition 5 — order kept             │
+│   ✅ sam       3 orders  all on partition 4 — order kept             │
+│   ✅ leo       2 orders  all on partition 2 — order kept             │
 │   ✅ maria     1 order   all on partition 3 — order kept             │
 │                                                                      │
 │   ✅ partitioner.js predicted 9/9 partitions correctly               │
@@ -390,8 +390,8 @@ Same key, same hash — but `% 6` instead of `% 3`, so alice goes to **partition
 
 Two lessons in that table:
 
-1. **Every key moved.** On a fresh topic that's harmless. On a live topic, alice's old orders stay in partition 0 while her new ones go to partition 3. For a while two consumers hold her events, and ordering across the switch is gone. That's why you choose the partition count up front, with room to grow.
-2. **Partitions 0, 1 and 2 got nothing.** Four customers can't fill six partitions. More partitions only help when there are enough distinct keys to spread across them.
+1. **Almost every key moved.** alice went 0 → 3, sam 1 → 4, maria 0 → 3. leo happened to land on 2 again, pure coincidence of the arithmetic, and not something you can plan around. On a fresh topic that's harmless. On a live topic, alice's old orders stay in partition 0 while her new ones go to partition 3. For a while two consumers hold her events, and ordering across the switch is gone. That's why you choose the partition count up front, with room to grow.
+2. **Partitions 0, 1 and 5 got nothing.** Four customers can't fill six partitions. More partitions only help when there are enough distinct keys to spread across them.
 
 Put it back with `docker compose down && docker compose up --build`.
 
@@ -426,13 +426,13 @@ docker compose run --rm verifier
 2 · The broker agrees with partitioner.js
 
   ✅ predicted partition === broker-acked partition for all 30 messages
-       alice→p0  priya→p1  chen→p2  maria→p0  omar→p1  yuki→p0
+       alice→p0  sam→p1  leo→p2  maria→p0  omar→p1  yuki→p0
 
 3 · Same key always lands on the same partition
 
   ✅ "alice" — 5 messages, 1 distinct partition
-  ✅ "priya" — 5 messages, 1 distinct partition
-  ✅ "chen" — 5 messages, 1 distinct partition
+  ✅ "sam" — 5 messages, 1 distinct partition
+  ✅ "leo" — 5 messages, 1 distinct partition
   ✅ "maria" — 5 messages, 1 distinct partition
   ✅ "omar" — 5 messages, 1 distinct partition
   ✅ "yuki" — 5 messages, 1 distinct partition
@@ -441,8 +441,8 @@ docker compose run --rm verifier
 
   ✅ read back all 30 messages
   ✅ "alice" — offsets ascending ⇒ seq 1..5 in order
-  ✅ "priya" — offsets ascending ⇒ seq 1..5 in order
-  ✅ "chen" — offsets ascending ⇒ seq 1..5 in order
+  ✅ "sam" — offsets ascending ⇒ seq 1..5 in order
+  ✅ "leo" — offsets ascending ⇒ seq 1..5 in order
   ✅ "maria" — offsets ascending ⇒ seq 1..5 in order
   ✅ "omar" — offsets ascending ⇒ seq 1..5 in order
   ✅ "yuki" — offsets ascending ⇒ seq 1..5 in order
@@ -455,7 +455,7 @@ docker compose run --rm verifier
 6 · Changing the partition count remaps keys (the one-way door)
 
   ✅ 6/6 keys move partition when 3 → 4
-       alice: p0→p1  priya: p1→p2  chen: p2→p1  maria: p0→p3  omar: p1→p3  yuki: p0→p1
+       alice: p0→p1  sam: p1→p2  leo: p2→p0  maria: p0→p3  omar: p1→p3  yuki: p0→p1
 
   ALL CHECKS PASSED — verified against a live Kafka broker.
 ```
